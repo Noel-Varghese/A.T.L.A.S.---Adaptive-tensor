@@ -1,0 +1,9 @@
+
+*.exe
+*.o
+build/
+
+
+models/
+*.gguf
+*.bin
