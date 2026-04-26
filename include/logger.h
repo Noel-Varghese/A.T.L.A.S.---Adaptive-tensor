@@ -11,10 +11,10 @@
 #define CYAN    "\033[36m"
 
 enum class LogLevel{
-    ERROR = 0,
-    WARN = 1,
-    INFO = 2,
-    DEBUG = 3
+    Log_ERROR = 0,
+    Log_WARN = 1,
+    Log_INFO = 2,
+    Log_DEBUG = 3
 };
 
 class Logger{
@@ -22,7 +22,7 @@ class Logger{
         static LogLevel m_LogLevel;
     public:
         static void setLogLevel(LogLevel LogLevel);
-        static void log(std::string_view msg, LogLevel level = LogLevel::INFO);
+        static void log(std::string_view msg, LogLevel level = LogLevel::Log_INFO);
     
 };
 
