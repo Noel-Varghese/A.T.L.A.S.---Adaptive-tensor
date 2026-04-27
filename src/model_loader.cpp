@@ -2,6 +2,7 @@
 #include <string>
 #include <windows.h>
 #include <fstream>
+#include <cstdint>
 #include "../include/logger.h"
 
 int main(){
@@ -45,6 +46,17 @@ int main(){
 
     if (magic == "GGUF") {
         Logger::log("A.T.L.A.S. is mapped and ready for tensor alignment.", LogLevel::Log_INFO);
+        //Reads data pointer using 32-bit integer
+        uint32_t version = *reinterpret_cast<uint32_t*>(data_ptr+4);
+        //reads Tensor count
+        uint64_t tensor_count = *reinterpret_cast<uint64_t*>(data_ptr + 8);
+        //Reads Metadata
+        uint64_t metadata_kv = *reinterpret_cast<uint64_t*>(data_ptr+16);
+        //Helps print the results
+        Logger::log("GGUF Format Version: " + std::to_string(version), LogLevel::Log_DEBUG);
+        Logger::log("Neural Network Tensors: " + std::to_string(tensor_count), LogLevel::Log_INFO);
+        Logger::log("Hyperparameter KV Pairs: " + std::to_string(metadata_kv), LogLevel::Log_INFO);
+
     } else {
         Logger::log("Corrupted memory map. Expected GGUF.", LogLevel::Log_ERROR);
     }
