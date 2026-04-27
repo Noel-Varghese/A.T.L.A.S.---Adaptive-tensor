@@ -56,6 +56,22 @@ int main(){
         Logger::log("GGUF Format Version: " + std::to_string(version), LogLevel::Log_DEBUG);
         Logger::log("Neural Network Tensors: " + std::to_string(tensor_count), LogLevel::Log_INFO);
         Logger::log("Hyperparameter KV Pairs: " + std::to_string(metadata_kv), LogLevel::Log_INFO);
+        
+        //help start the scanner right after the static header
+        uint64_t offset = 24;
+        //Reads the length of first key
+        uint64_t key_length = *reinterpret_cast<uint64_t*>(data_ptr + offset);
+        offset += 8;
+        //extract the actual text using the dynamic length
+        std::string key_name(data_ptr+offset, key_length);
+        offset +=key_length;//helps push scanner forward by exact size
+        //read data type id
+        uint32_t value_type = *reinterpret_cast<uint32_t*>(data_ptr+offset);
+
+        Logger::log("--- FIRST MYSTERY BOX EXTRACTED ---", LogLevel::Log_INFO);
+        Logger::log("Key Name: " + key_name, LogLevel::Log_DEBUG);
+        Logger::log("Key Length: " + std::to_string(key_length) + " bytes", LogLevel::Log_DEBUG);
+        Logger::log("Value Type ID: " + std::to_string(value_type), LogLevel::Log_DEBUG);
 
     } else {
         Logger::log("Corrupted memory map. Expected GGUF.", LogLevel::Log_ERROR);
