@@ -60,18 +60,52 @@ int main(){
         //help start the scanner right after the static header
         uint64_t offset = 24;
         //Reads the length of first key
-        uint64_t key_length = *reinterpret_cast<uint64_t*>(data_ptr + offset);
-        offset += 8;
-        //extract the actual text using the dynamic length
-        std::string key_name(data_ptr+offset, key_length);
-        offset +=key_length;//helps push scanner forward by exact size
-        //read data type id
-        uint32_t value_type = *reinterpret_cast<uint32_t*>(data_ptr+offset);
+        Logger::log("Initiating Metadata Scanner", LogLevel::Log_INFO);
+        for(uint64_t i = 0;i<metadata_kv ;++i){
+            //reads the key length
+            uint64_t key_length = *reinterpret_cast<uint64_t*>(data_ptr + offset);
+            offset += 8;
+            //Extracts Key Name
+            std::string key_name(data_ptr + offset, key_length);
+            offset += key_length;
 
-        Logger::log("--- FIRST MYSTERY BOX EXTRACTED ---", LogLevel::Log_INFO);
-        Logger::log("Key Name: " + key_name, LogLevel::Log_DEBUG);
-        Logger::log("Key Length: " + std::to_string(key_length) + " bytes", LogLevel::Log_DEBUG);
-        Logger::log("Value Type ID: " + std::to_string(value_type), LogLevel::Log_DEBUG);
+            //Read value type ID
+            uint32_t value_type = *reinterpret_cast<uint32_t*>(data_ptr + offset);
+            offset += 4;
+            //Extracts value based on type
+            std::string print_val = "";
+            if(value_type == 4 || value_type == 5){
+                //32 bit integers
+                uint32_t val = *reinterpret_cast<uint32_t*>(data_ptr + offset);
+                print_val = std::to_string(val);
+                offset += 4;
+            }else if(value_type == 6){//32 bit float
+                float val = *reinterpret_cast<float*>(data_ptr + offset);
+                print_val = std::to_string(val);
+                offset += 4;
+            }else if (value_type == 7) { // Boolean
+                bool val = *reinterpret_cast<bool*>(data_ptr + offset);
+                print_val = val ? "true" : "false";
+                offset += 1;
+            }
+            else if (value_type == 8) { // String
+                uint64_t str_len = *reinterpret_cast<uint64_t*>(data_ptr + offset);
+                offset += 8;
+                print_val = std::string(data_ptr + offset, str_len);
+                offset += str_len;
+            }
+            else if (value_type == 9) { // Array
+                print_val = "[ARRAY DETECTED - HALTING SCAN TO PREVENT OVERFLOW]";
+                Logger::log(key_name + " = " + print_val, LogLevel::Log_DEBUG);
+                break; // We break the loop here until we write the array logic
+            }
+            else {
+                print_val = "[UNKNOWN TYPE ID: " + std::to_string(value_type) + "]";
+                Logger::log(key_name + " = " + print_val, LogLevel::Log_ERROR);
+                break; // Safety halt
+            }   
+            Logger::log(key_name + " = " + print_val, LogLevel::Log_DEBUG);
+        }
 
     } else {
         Logger::log("Corrupted memory map. Expected GGUF.", LogLevel::Log_ERROR);
