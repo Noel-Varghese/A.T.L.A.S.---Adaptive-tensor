@@ -120,7 +120,7 @@ int main(){
                 break; 
             }   
             Logger::log(key_name + " = " + print_val, LogLevel::Log_DEBUG);
-        } // <--- THIS CLOSING BRACE WAS MISSING/MISPLACED IN YOUR CODE!
+        } 
 
         // --- PHASE 5: TENSOR ROSTER ---
         Logger::log("--------------INITIATING TENSOR ROSTER SCAN ---------------", LogLevel::Log_INFO);
