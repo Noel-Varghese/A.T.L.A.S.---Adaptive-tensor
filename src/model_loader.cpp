@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <fstream>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include "../include/logger.h"
 #include "../include/memory/arena.h"
@@ -145,8 +146,23 @@ int main(){
 
         // --- PHASE 5: TENSOR ROSTER ---
         Logger::log("--------------INITIATING TENSOR ROSTER SCAN ---------------", LogLevel::Log_INFO);
+        Logger::log("Starting loop for " + std::to_string(tensor_count) + " tensors. Offset: " + std::to_string(offset), LogLevel::Log_INFO);
+        struct TensorInfo
+        {
+            std::string name;
+            std::vector<uint64_t> shape;
+            uint32_t ggml_type;
+            uint64_t rel_offset;
+            std::string shape_str;
+        };
+        std::vector<TensorInfo> tensor_infos;
+        tensor_infos.reserve(tensor_count);
         
         for(uint64_t i = 0; i < tensor_count; ++i) {
+            if (i > 0 && i % (tensor_count / 4) == 0) {
+                Logger::log("Hydration Progress: " + std::to_string((i * 100) / tensor_count) + "%", LogLevel::Log_INFO);
+            }
+            Logger::log("Processing Tensor [" + std::to_string(i) + "] at Offset: " + std::to_string(offset), LogLevel::Log_DEBUG);
             uint64_t name_len = *reinterpret_cast<uint64_t*>(data_ptr + offset);
             offset += 8;
             
@@ -172,9 +188,7 @@ int main(){
 
             uint64_t tensor_offset = *reinterpret_cast<uint64_t*>(data_ptr + offset);
             offset += 8;
-            size_t current_tensor_byte_size = calculate_tensor_size(tensor_shape, ggml_type);
-            void* aligned_tensor_memory = tensor_arena.allocate(current_tensor_byte_size, 32);
-
+            
             if(i < 5 || i == tensor_count - 1) {
                 Logger::log("Tensor [" + std::to_string(i) + "]: " + tensor_name + 
                             " | Shape: " + shape_str + 
@@ -182,6 +196,25 @@ int main(){
             }
             if(i == 5) {
                 Logger::log("... [393 Tensors Hidden for Terminal Safety] ...", LogLevel::Log_INFO);
+            }
+           tensor_infos.push_back({std::move(tensor_name), std::move(tensor_shape), ggml_type, tensor_offset, shape_str});
+
+        }
+        uint64_t tensor_data_section_strt = (offset+31) & ~31ULL;
+        Logger::log("Tensor data section begins at: " + std::to_string(tensor_data_section_strt), LogLevel::Log_INFO);
+        for(uint64_t i=0;i<tensor_infos.size();++i){
+            const TensorInfo& t = tensor_infos[i];
+            if(i>0&& i % (tensor_infos.size()/4) == 0){
+                Logger::log("Hydration Progress: " + std::to_string((i * 100) / tensor_infos.size()) + "%", LogLevel::Log_INFO);
+            }
+            size_t current_tensor_byte_size = calculate_tensor_size(t.shape, t.ggml_type);
+            void* aligned_tensor_memory = data_ptr + tensor_data_section_strt + t.rel_offset;
+            // Logger::log("Dest Pointer: " + std::to_string(reinterpret_cast<uint64_t>(aligned_tensor_memory)), LogLevel::Log_INFO);
+            // Logger::log("Source Pointer: " + std::to_string(reinterpret_cast<uint64_t>(data_ptr + tensor_data_section_strt + t.rel_offset)), LogLevel::Log_INFO);
+            // std::memcpy(aligned_tensor_memory, data_ptr+tensor_data_section_strt+t.rel_offset,current_tensor_byte_size);
+            if(i<5 || i == tensor_infos.size()-1){
+                uint8_t* byte_ptr = static_cast<uint8_t*>(aligned_tensor_memory);
+                Logger::log("Hydration Check [Byte 0]: " + std::to_string(byte_ptr[0]), LogLevel::Log_DEBUG);
             }
         }
         Logger::log("Engine successfully mapped all 399 architectural boundaries.", LogLevel::Log_INFO);
