@@ -3,7 +3,28 @@
 #include <windows.h>
 #include <fstream>
 #include <cstdint>
+#include <vector>
 #include "../include/logger.h"
+#include "../include/memory/arena.h"
+
+//calculaetes exact number of VRAM required
+size_t calculate_tensor_size(const std::vector<uint64_t>& shape, uint32_t ggml_type){
+    size_t total_elements = 1;
+    for(uint64_t dim:shape){
+        total_elements *= dim;
+    }
+    //determining byte size based on ggml id
+    //0 = FP32(4bytes), 1 = FP16(2bytes)
+    switch(ggml_type){
+        case 0:
+        return total_elements * 4;//FP32
+        case 1:
+        return total_elements *2;//FP16
+        default:
+        return(total_elements * 55)/100;
+    }
+}
+
 
 int main(){
     const char* model_path = "models/qwen3-8b-Q4_K_M.gguf";
@@ -40,10 +61,10 @@ int main(){
     Logger::log("Zero-Copy Map successful. Virtual Pointer acquired.", LogLevel::Log_INFO);
     char* data_ptr = static_cast<char*>(mapped_data);
     std::string magic(data_ptr, 4); 
-
+    
     if (magic == "GGUF") {
         Logger::log("A.T.L.A.S. is mapped and ready for tensor alignment.", LogLevel::Log_INFO);
-        
+        Arena tensor_arena(5368709120ULL);// Spin up a 5GB memory arena (5 * 1024 * 1024 * 1024 bytes)
         // --- PHASE 3 ---
         uint32_t version = *reinterpret_cast<uint32_t*>(data_ptr+4);
         uint64_t tensor_count = *reinterpret_cast<uint64_t*>(data_ptr + 8);
@@ -134,10 +155,12 @@ int main(){
             
             uint32_t n_dims = *reinterpret_cast<uint32_t*>(data_ptr + offset);
             offset += 4;
-
+            
             std::string shape_str = "[";
+            std::vector<uint64_t> tensor_shape;
             for (uint32_t d = 0; d < n_dims; ++d) {
                 uint64_t dim_size = *reinterpret_cast<uint64_t*>(data_ptr + offset);
+                tensor_shape.push_back(dim_size);
                 shape_str += std::to_string(dim_size);
                 if (d < n_dims - 1) shape_str += ", ";
                 offset += 8;
@@ -149,6 +172,8 @@ int main(){
 
             uint64_t tensor_offset = *reinterpret_cast<uint64_t*>(data_ptr + offset);
             offset += 8;
+            size_t current_tensor_byte_size = calculate_tensor_size(tensor_shape, ggml_type);
+            void* aligned_tensor_memory = tensor_arena.allocate(current_tensor_byte_size, 32);
 
             if(i < 5 || i == tensor_count - 1) {
                 Logger::log("Tensor [" + std::to_string(i) + "]: " + tensor_name + 
