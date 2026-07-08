@@ -7,3 +7,5 @@ build/
 models/
 *.gguf
 *.bin
+
+benchmark
