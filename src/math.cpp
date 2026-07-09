@@ -1,4 +1,5 @@
 #include <immintrin.h>//used for the AVX calculation
+#include "../../include/compute/MATH.h"
 
 float avx2_dotProduct(const float* vec_A, const float* vec_B, int size){
     float sum = 0.0f;
@@ -24,4 +25,11 @@ float avx2_dotProduct(const float* vec_A, const float* vec_B, int size){
         sum+= vec_A[i]*vec_B[i];
     }
     return sum;
+}
+
+void matvec_fp32(const float* matrix_W, const float* vec_X, float* vec_Y, int rows, int cols){
+    for(int i=0;i<rows;++i){
+        const float* current_row_pointer =  &matrix_W[i*cols];
+        vec_Y[i] = avx2_dotProduct(current_row_pointer, vec_X, cols);
+    }
 }
