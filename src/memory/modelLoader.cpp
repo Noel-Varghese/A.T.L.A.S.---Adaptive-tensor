@@ -3,19 +3,102 @@
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
-#include <Windows.h>
+#include <Windows.h>//used for handling memories for the zero-copy mechanism
 
 ModelLoader::ModelLoader(const std::string& path) {
 	filePath = path;
 	Logger::log("Mapping GGUF into OS Virtual Memory...", LogLevel::Log_INFO);
+
 	HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) throw std::runtime_error("Failed to open model file.");
-	HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-	if (hMapping == NULL)throw std::runtime_error("Failed to create Memory map");
-	mappedData = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
-	if (mappedData == NULL)throw std::runtime_error("Failed to map view of file.");
 
+	HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+	if (hMapping == NULL) throw std::runtime_error("Failed to create Memory map");
+
+	mappedData = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+	if (mappedData == NULL) throw std::runtime_error("Failed to map view of file.");
+
+	char* dataPtr = static_cast<char*>(mappedData);
+	if (std::string(dataPtr, 4) != "GGUF") {
+		throw std::runtime_error("Invalid GGUF file format.");
+	}
+
+	uint64_t tensorCount = *reinterpret_cast<uint64_t*>(dataPtr + 8);
+	uint64_t metadataKV = *reinterpret_cast<uint64_t*>(dataPtr + 16);
+	uint64_t offset = 24;
+
+	Logger::log("Fast-forwarding through " + std::to_string(metadataKV) + " KV pairs...", LogLevel::Log_DEBUG);
+
+
+	for (uint64_t i = 0; i < metadataKV; ++i) {
+		uint64_t keyLen = *reinterpret_cast<uint64_t*>(dataPtr + offset); // FIXED CAST
+		offset += 8 + keyLen;
+
+		uint32_t valType = *reinterpret_cast<uint32_t*>(dataPtr + offset);
+		offset += 4;
+
+		if (valType == 4 || valType == 5 || valType == 6) {
+			offset += 4;
+		}
+		else if (valType == 7) {
+			offset += 1;
+		}
+		else if (valType == 8) {
+			uint64_t str_len = *reinterpret_cast<uint64_t*>(dataPtr + offset);
+			offset += 8 + str_len;
+		}
+		else if (valType == 9) {
+			uint32_t arr_type = *reinterpret_cast<uint32_t*>(dataPtr + offset); // FIXED dataPtr
+			uint64_t arr_len = *reinterpret_cast<uint64_t*>(dataPtr + offset + 4);
+			offset += 12;
+			for (uint64_t a = 0; a < arr_len; ++a) {
+				if (arr_type == 4 || arr_type == 5 || arr_type == 6) offset += 4;
+				else if (arr_type == 7) offset += 1;
+				else if (arr_type == 8) {
+					uint64_t slen = *reinterpret_cast<uint64_t*>(dataPtr + offset);
+					offset += 8 + slen;
+				}
+			}
+		}
+		else {
+			offset += 4;
+		}
 }
+
+		Logger::log("Mapping " + std::to_string(tensorCount) + " tensors to registry...", LogLevel::Log_INFO);
+
+		for (uint64_t i = 0; i < tensorCount; ++i) {
+			uint64_t name_len = *reinterpret_cast<uint64_t*>(dataPtr + offset);
+			offset += 8;
+			std::string t_name(dataPtr + offset, name_len);
+			offset += name_len;
+
+			uint32_t n_dims = *reinterpret_cast<uint32_t*>(dataPtr + offset);
+			offset += 4;
+
+			TensorInfo info;
+			for (uint32_t d = 0; d < n_dims; ++d) {
+				info.shape.push_back(*reinterpret_cast<uint64_t*>(dataPtr + offset));
+				offset += 8;
+			}
+
+			info.ggml_type = *reinterpret_cast<uint32_t*>(dataPtr + offset);
+			offset += 4;
+			info.absOffset = *reinterpret_cast<uint64_t*>(dataPtr + offset);
+			offset += 8;
+
+			tensor_registry[t_name] = info;
+		}
+
+		// Inorder to align the data to 32 bytes
+		uint64_t data_section_start = (offset + 31) & ~31ULL;
+		for (auto& pair : tensor_registry) {
+			pair.second.absOffset += data_section_start;
+		}
+
+		Logger::log("Brain fully mapped. Registry size: " + std::to_string(tensor_registry.size()), LogLevel::Log_INFO);
+}
+
 
 Tensor ModelLoader::loadTensorName(const std::string& name, Arena* targetArena, Device loc) {
 	auto it = tensor_registry.find(name);
