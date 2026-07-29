@@ -8,7 +8,8 @@ enum class Device {
 
 enum class DataType {
 	FP32,
-	Q4_K_M
+	Q4_K_M,
+	Q6_K
 };
 
 struct Tensor {

@@ -114,8 +114,14 @@ Tensor ModelLoader::loadTensorName(const std::string& name, Arena* targetArena, 
 	if (info.ggml_type == 0) {
 		mapped_dtype = DataType::FP32;
 	}
-	else {
+	else if (info.ggml_type == 12) {
 		mapped_dtype = DataType::Q4_K_M;
+	}
+	else if (info.ggml_type == 14) {
+		mapped_dtype = DataType::Q6_K;
+	}
+	else {
+		throw std::runtime_error("Unsupported ggml_type: " + std::to_string(info.ggml_type));
 	}
 	size_t byte_size = calculateReqBytes(rows, cols, mapped_dtype);
 	void* dest_ptr = targetArena->allocate(byte_size);
@@ -130,7 +136,7 @@ Tensor ModelLoader::loadTensorName(const std::string& name, Arena* targetArena, 
 	t.dtype = mapped_dtype;
 	t.location = loc;
 	t.data = dest_ptr;
-
+	
 	return t;
 }
 
@@ -162,7 +168,13 @@ size_t ModelLoader::calculateReqBytes(int rows, int cols, DataType dtype) {
 			throw std::invalid_argument("For Q4_K_M, total elements must be a multiple of 256.");
 		}
 		size_t numBlocks = totalElements / 256;
-		return numBlocks * 104;
+		return numBlocks * 144;
+	}else if(dtype == DataType::Q6_K){
+				if (totalElements % 256 != 0) {
+			throw std::invalid_argument("For Q6_K, total elements must be a multiple of 256.");
+		}
+		size_t numBlocks = totalElements / 256;
+		return numBlocks * 210;
 	}
 	throw std::invalid_argument("Unsupported data type for tensor loading.");
 
