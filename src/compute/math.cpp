@@ -1,7 +1,7 @@
 #include <immintrin.h>//used for the AVX calculation
 #include "../../include/compute/MATH.h"
 #include <cstring>
-
+#include <cmath>
 
 float FP16ToFP32(uint16_t h) {
     uint32_t sign = (h & 0x8000) << 16;
@@ -195,4 +195,27 @@ float VecDotQ6K_FP32(const int cols, const uint8_t* wRowCompressed, const float*
 		TotalDot += BlockDot;
 	}
 	return TotalDot;
+}
+
+void ROPE(float* vec, int pos, int headDim, float base) {
+    int halfDim = headDim / 2;
+    for (int i = 0;i < halfDim;++i) {
+        float freq = 1.0f / std::pow(base, (2.0f * i)/headDim);
+        float theta = pos * freq;
+        float cosTheta = std::cos(theta);
+        float sinTheta = std::sin(theta);
+        float x0 = vec[i];
+        float x1 = vec[i + halfDim];
+        vec[i] = x0 * cosTheta - x1 * sinTheta;
+        vec[i + halfDim] = x0 * sinTheta + x1 * cosTheta;
+    }
+}
+
+void AttentionSingleToken(float* q_head, float* k_head, float* v_head, float* out_head, int head_dim) {
+    float score = avx2_dotProduct(q_head, k_head, head_dim);
+    score /= std::sqrt(static_cast<float>(head_dim));
+    float prob = 1.0f;
+    for (int i = 0; i < head_dim;i++) {
+        out_head[i] = prob * v_head[i];
+    }
 }

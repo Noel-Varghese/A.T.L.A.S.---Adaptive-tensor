@@ -16,20 +16,14 @@ int main() {
 		AtlasEngine engine(config);
 		//boots memory manager
 		engine.bootMem();
-		//to test the file loader 
+		//Loading the model 
 		ModelLoader loader("C:/Users/vargh/Desktop/Noel/Projects/ATLAS/Code/models/Qwen3-8B-Q4_K_M.gguf");
 		void* data_ptr = loader.loadChunkToArena(engine.getCPUArena(), 1024);
-		//Logger::log("Requesting layer 0 query weights", LogLevel::Log_INFO);
+		//Loading Layer 0
 		Tensor q_weight = loader.loadTensorName("blk.0.attn_q.weight", engine.getCPUArena(), Device::CPU);
-		//Logger::log("Requesting Token Embedding...", LogLevel::Log_INFO);
 		Tensor EmbedMat = loader.loadTensorName("token_embd.weight", engine.getCPUArena(), Device::CPU);
-		//Logger::log("Embedding Matrix Shape: " + std::to_string(EmbedMat.rows) + " x " + std::to_string(EmbedMat.cols), LogLevel::Log_INFO);
-		//Logger::log("SUCCESS: Tensor Hydrated!", LogLevel::Log_INFO);
-		//Logger::log("Matrix Shape: " + std::to_string(q_weight.rows) + " x " + std::to_string(q_weight.cols), LogLevel::Log_INFO);
-
 		size_t expected_bytes = (q_weight.rows * q_weight.cols / 256) * 144;
-		//Logger::log("Physical RAM Consumed: " + std::to_string(expected_bytes) + " bytes.", LogLevel::Log_INFO);
-		//Logger::log("Slicing the Token ID", LogLevel::Log_INFO);
+		//dequantize token embedding
 		int tokenID = 1532;
 		float* XVectorFloat = nullptr;
 		if (EmbedMat.dtype == DataType::FP32) {
@@ -50,12 +44,10 @@ int main() {
 				dequantize(XCompressedPtr + (i * 144), XVectorFloat + (i * 256));
 			}
 		}
-		//Logger::log("SUCCESS: Vector X is fully unzipped and primed for AVX2 execution.", LogLevel::Log_INFO);
-		std::cout << "[DEBUG] First 3 mathematical weights for 'Hello': \n";
-		for (int i = 0; i < 3; i++) {
-			std::cout << XVectorFloat[i] << "\n";
-		}
-		//Logger::log("Initiating Layer 1 Attention Query Math (Y = X * W)...", LogLevel::Log_INFO);
+		//std::cout << "[DEBUG] First 3 mathematical weights for 'Hello': \n";
+		//for (int i = 0; i < 3; i++) {
+		//	std::cout << XVectorFloat[i] << "\n";
+		//}
 		float* YVectorFloat = static_cast<float*>(engine.getCPUArena()->allocate(q_weight.rows * sizeof(float)));
 		int WBlockPerRow = q_weight.cols / 256;
 		size_t WBytesPerRow = WBlockPerRow * 144;
@@ -63,14 +55,14 @@ int main() {
 			uint8_t* WRowPtr = static_cast<uint8_t*>(q_weight.data) + (r * WBytesPerRow);
 			YVectorFloat[r] = VecDotQ4KM_FP32(q_weight.cols, WRowPtr, XVectorFloat);
 		}
-		Logger::log("SUCCESS: Layer 1 Forward Pass Complete.", LogLevel::Log_INFO);
+		//Logger::log("SUCCESS: Layer 1 Forward Pass Complete.", LogLevel::Log_INFO);
 
-		std::cout << "[DEBUG] First 3 mathematical outputs of Layer 1 (Vector Y): \n";
-		for (int i = 0; i < 3; i++) {
-			std::cout << YVectorFloat[i] << "\n";
-		}
+		//std::cout << "[DEBUG] First 3 mathematical outputs of Layer 1 (Vector Y): \n";
+		//for (int i = 0; i < 3; i++) {
+		//	std::cout << YVectorFloat[i] << "\n";
+		//}
 
-		Logger::log("Hydrating Layer 1 Key (K) and Value (V) Matrices...", LogLevel::Log_INFO);
+		//Logger::log("Hydrating Layer 1 Key (K) and Value (V) Matrices...", LogLevel::Log_INFO);
 		Tensor kWeights = loader.loadTensorName("blk.0.attn_k.weight", engine.getCPUArena(), Device::CPU);
 		Tensor vWeights = loader.loadTensorName("blk.0.attn_v.weight", engine.getCPUArena(), Device::CPU);
 		float* KVectorFLOAT = static_cast<float*>(engine.getCPUArena()->allocate(kWeights.rows * sizeof(float)));
@@ -95,11 +87,32 @@ int main() {
 				VVectorFLOAT[row] = VecDotQ4KM_FP32(vWeights.cols, WRowPtrV, XVectorFloat);
 			}
 		}
-		Logger::log("SUCCESS: Q, K, and V vectors are fully calculated.", LogLevel::Log_INFO);
-		std::cout << "[DEBUG] First 3 outputs of Vector K: "
-			<< KVectorFLOAT[0] << ", " << KVectorFLOAT[1] << ", " << KVectorFLOAT[2] << "\n";
-		std::cout << "[DEBUG] First 3 outputs of Vector V: "
-			<< VVectorFLOAT[0] << ", " << VVectorFLOAT[1] << ", " << VVectorFLOAT[2] << "\n";
+		//Logger::log("SUCCESS: Q, K, and V vectors are fully calculated.", LogLevel::Log_INFO);
+		//std::cout << "[DEBUG] First 3 outputs of Vector K: "
+		//	<< KVectorFLOAT[0] << ", " << KVectorFLOAT[1] << ", " << KVectorFLOAT[2] << "\n";
+		//std::cout << "[DEBUG] First 3 outputs of Vector V: "
+		//	<< VVectorFLOAT[0] << ", " << VVectorFLOAT[1] << ", " << VVectorFLOAT[2] << "\n";
+		int currentTokenPos = 0;
+		int numQHeads = 32;
+		int headDim = q_weight.cols / numQHeads;//4096/32 = 128
+		Logger::log("Applying RoPE to 32 Attention Heads (Head Dim: " + std::to_string(headDim) + ")...", LogLevel::Log_INFO);
+		for (int h = 0; h < numQHeads; h++) {
+			float* QHeadPtr = YVectorFloat + (h * headDim);
+			float* KHeadPtr = KVectorFLOAT + (h * headDim);
+			ROPE(QHeadPtr, currentTokenPos, headDim);
+			ROPE(KHeadPtr, currentTokenPos, headDim);
+		}
+		Logger::log("SUCCESS: Multi-Head Time vectors successfully rotated.", LogLevel::Log_INFO);
+		Logger::log("Executing Scaled Dot-Product Attention...", LogLevel::Log_INFO);
+		float* AttentionOUTVector = static_cast<float*>(engine.getCPUArena()->allocate(4096 * sizeof(float)));
+		for (int i = 0;i < numQHeads;i++) {
+			float* q_head_ptr = YVectorFloat + (i * headDim);
+			float* k_head_ptr = KVectorFLOAT + (i * headDim);
+			float* v_head_ptr = VVectorFLOAT + (i * headDim);
+			float* out_head_ptr = AttentionOUTVector + (i * headDim);
+			AttentionSingleToken(q_head_ptr, k_head_ptr, v_head_ptr, out_head_ptr, headDim);
+		}
+		std::cout << "[DEBUG] First 3 values of the Attention Output Vector: \n"<< AttentionOUTVector[0] << "\n"<< AttentionOUTVector[1] << "\n"<< AttentionOUTVector[2] << "\n";
 		Logger::log("SYSTEM INITIALIZED SUCCESSFULLY", LogLevel::Log_DEBUG);
 		//Logger::log("V weight dtype: " + std::to_string(static_cast<int>(vWeights.dtype)), LogLevel::Log_INFO);
 	}

@@ -8,4 +8,6 @@ void dequantize(const uint8_t* compressedBlock, float* OutFloatz);
 float VecDotQ4KM_FP32(const int cols, const uint8_t* wRowCompressed, const float* XVec);
 void dequantizeQ6K(const uint8_t* compressedBlock, float* OutFloatz);
 float VecDotQ6K_FP32(const int cols, const uint8_t* wRowCompressed, const float* XVec);
+void ROPE(float* vec, int pos, int headDim, float base = 10000.0f);
+void AttentionSingleToken(float* q_head, float* k_head, float* v_head, float* out_head, int head_dim);
 #endif
