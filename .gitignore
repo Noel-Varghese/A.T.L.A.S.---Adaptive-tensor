@@ -7,5 +7,6 @@ build/
 models/
 *.gguf
 *.bin
+src/memory/arena_allocator.cpp
 
 benchmark

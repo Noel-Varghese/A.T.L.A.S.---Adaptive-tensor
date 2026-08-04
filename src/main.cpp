@@ -113,6 +113,27 @@ int main() {
 			AttentionSingleToken(q_head_ptr, k_head_ptr, v_head_ptr, out_head_ptr, headDim);
 		}
 		std::cout << "[DEBUG] First 3 values of the Attention Output Vector: \n"<< AttentionOUTVector[0] << "\n"<< AttentionOUTVector[1] << "\n"<< AttentionOUTVector[2] << "\n";
+		Logger::log("Hydrating Attention Output Projection Matrix (O)...", LogLevel::Log_INFO);
+		Tensor OWeight = loader.loadTensorName("blk.0.attn_output.weight", engine.getCPUArena(), Device::CPU);
+		float* ProjectAttention = static_cast<float*>(engine.getCPUArena()->allocate(OWeight.rows * sizeof(float)));
+		Logger::log("Initiating AVX2 Math for Output Projection (O = AttentionOut * W_o)...", LogLevel::Log_INFO);
+		if (OWeight.dtype == DataType::Q4_K_M) {
+			int OBlocksPerRow = OWeight.cols / 256;
+			size_t OBytesPerRow = OBlocksPerRow * 144;
+			for (int row = 0;row < OWeight.rows;row++) {
+				uint8_t* WRowPtr = static_cast<uint8_t*>(OWeight.data) + (row * OBytesPerRow);
+				ProjectAttention[row] = VecDotQ4KM_FP32(OWeight.cols, WRowPtr, AttentionOUTVector);
+			}
+		}
+		else {
+			Logger::log("FATAL: Unhandled O matrix format. Check hardware ID.", LogLevel::Log_ERROR);
+			return -1;
+		}
+		Logger::log("Applying Residual Connection (X = X + O)...", LogLevel::Log_INFO);
+		std::cout << "[DEBUG] First 3 values of the newly updated Vector X: \n"
+			<< XVectorFloat[0] << "\n"
+			<< XVectorFloat[1] << "\n"
+			<< XVectorFloat[2] << "\n";
 		Logger::log("SYSTEM INITIALIZED SUCCESSFULLY", LogLevel::Log_DEBUG);
 		//Logger::log("V weight dtype: " + std::to_string(static_cast<int>(vWeights.dtype)), LogLevel::Log_INFO);
 	}
@@ -121,3 +142,8 @@ int main() {
 	}
 	return 0;
 }
+
+
+
+
+//nvcc - O3 - arch = sm_89 - std = c++17 - Xcompiler "/arch:AVX2 /EHsc /std:c++17" src / main.cpp src / core / Atlas_Engine.cpp src / memory / modelLoader.cpp src / memory / arena.cpp src / memory / gpuArena.cu src / compute / math.cpp src / compute / math.cu src / Logger.cpp - o atlas.exe

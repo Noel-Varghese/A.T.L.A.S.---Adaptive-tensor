@@ -11,7 +11,7 @@ class KVCacheRingBuffer {
 		size_t currentTokenIdx;
 	public:
 		KVCacheRingBuffer(void* allocatedMem, size_t maxCapacity, size_t tokenSize) {
-			cacheMem = static_cast<float*>(allocatedaMem);
+			cacheMem = static_cast<float*>(allocatedMem);
 			maxToken = maxCapacity;
 			TokenSizeBytes = tokenSize;
 			currentTokenIdx = 0;
