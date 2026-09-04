@@ -219,3 +219,9 @@ void AttentionSingleToken(float* q_head, float* k_head, float* v_head, float* ou
         out_head[i] = prob * v_head[i];
     }
 }
+
+void VecMulElementwise(float* VECA, const float* VECB, int size) {
+	for (int i = 0; i < size; ++i) {
+		VECA[i] *= VECB[i];
+	}
+}

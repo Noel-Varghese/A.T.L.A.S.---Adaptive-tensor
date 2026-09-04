@@ -10,4 +10,7 @@ void dequantizeQ6K(const uint8_t* compressedBlock, float* OutFloatz);
 float VecDotQ6K_FP32(const int cols, const uint8_t* wRowCompressed, const float* XVec);
 void ROPE(float* vec, int pos, int headDim, float base = 10000.0f);
 void AttentionSingleToken(float* q_head, float* k_head, float* v_head, float* out_head, int head_dim);
+void RMSNorm(float* OutVec, const float* InVec, const float* weight, int size, float eps = 1e-6f);
+void SILU(float* vec, int size);
+void VecMulElementwise(float* VECA, const float* VECB, int size);
 #endif
